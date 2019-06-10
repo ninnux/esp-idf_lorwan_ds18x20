@@ -250,7 +250,7 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 	    }else{
 		printf("NO WIFI ... continue\n");
 		//esp_restart();	
-            	xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+            xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 	    } 
             break;
 	}
@@ -287,6 +287,7 @@ extern "C" void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Waiting for wifi");
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+    ESP_LOGI(TAG, "Wifi returns");
 }
 
 
