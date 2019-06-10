@@ -1,2 +1,2 @@
-# ESP-MQTT + ds18x20 Temperature sensor + ninux OTA
+# lorawan + ds18x20 Temperature sensor + ninux OTA
 
