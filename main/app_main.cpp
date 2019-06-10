@@ -211,7 +211,8 @@ void ds18x20_test(void *pvParameter)
                      float temp_f = (temp_c * 1.8) + 32;
 		     float temp_c_10 = temp_c*10;
                      printf("  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
-	                 sprintf((char*)msgData,"{\"temp\":%d}",(int) temp_c_10);
+	             //sprintf((char*)msgData,"{\"temp\":%d}",(int) temp_c_10);
+	             sprintf((char*)msgData,"temp:%d",(int) temp_c_10);
                  }
                  printf("\n");
 
@@ -304,6 +305,11 @@ extern "C" void app_main(void)
     esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
     esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
+
+    esp_err_t err2;
+    // Initialize the GPIO ISR handler service
+    err2 = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+    ESP_ERROR_CHECK(err2);
 
 
 
