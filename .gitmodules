@@ -1,0 +1,6 @@
+[submodule "components/ninux_esp32_ota"]
+	path = components/ninux_esp32_ota
+	url = https://github.com/ninnux/ninux_esp32_ota.git
+[submodule "components/ttn-esp32"]
+	path = components/ttn-esp32
+	url = https://github.com/manuelbl/ttn-esp32.git
