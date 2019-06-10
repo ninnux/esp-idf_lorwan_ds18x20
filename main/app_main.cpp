@@ -39,10 +39,12 @@
 #include "soc/sens_reg.h"
 #include "soc/rtc.h"
 
-
+extern "C" {
 #include "ds18x20.h"
-
+}
+extern "C" {
 #include "ninux_esp32_ota.h"
+}
 
 
 #define SDA_PIN GPIO_NUM_21
@@ -68,7 +70,7 @@ uint8_t msgData[32];
 SemaphoreHandle_t xSemaphore = NULL;
 
 
-static const gpio_num_t SENSOR_GPIO = 17;
+static const gpio_num_t SENSOR_GPIO = GPIO_NUM_17;
 static const uint32_t LOOP_DELAY_MS = 250;
 static const int MAX_SENSORS = 8;
 static const int RESCAN_INTERVAL = 8;
@@ -78,6 +80,57 @@ static const int RESCAN_INTERVAL = 8;
 static TheThingsNetwork ttn;
 
 const unsigned TX_INTERVAL = 60;
+
+void sleeppa(int sec)
+{
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    int sleep_time_ms = (now.tv_sec - sleep_enter_time.tv_sec) * 1000 + (now.tv_usec - sleep_enter_time.tv_usec) / 1000;
+
+    switch (esp_sleep_get_wakeup_cause()) {
+        case ESP_SLEEP_WAKEUP_EXT1: {
+            uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
+            if (wakeup_pin_mask != 0) {
+                int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
+                printf("Wake up from GPIO %d\n", pin);
+            } else {
+                printf("Wake up from GPIO\n");
+            }
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_TIMER: {
+            printf("Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+        default:
+            printf("Not a deep sleep reset\n");
+    }
+
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    const int wakeup_time_sec = sec;
+    printf("Enabling timer wakeup, %ds\n", wakeup_time_sec);
+    esp_sleep_enable_timer_wakeup(wakeup_time_sec * 1000000);
+
+    const int ext_wakeup_pin_1 = 25;
+    const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
+    const int ext_wakeup_pin_2 = 26;
+    const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
+
+    printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
+    esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+
+    // Isolate GPIO12 pin from external circuits. This is needed for modules
+    // which have an external pull-up resistor on GPIO12 (such as ESP32-WROVER)
+    // to minimize current consumption.
+    rtc_gpio_isolate(GPIO_NUM_12);
+
+    printf("Entering deep sleep\n");
+    gettimeofday(&sleep_enter_time, NULL);
+
+    esp_deep_sleep_start();
+}
 
 void sendMessages(void* pvParameter)
 {
@@ -176,56 +229,6 @@ void ds18x20_test(void *pvParameter)
 }
 
 
-void sleeppa(int sec)
-{
-    struct timeval now;
-    gettimeofday(&now, NULL);
-    int sleep_time_ms = (now.tv_sec - sleep_enter_time.tv_sec) * 1000 + (now.tv_usec - sleep_enter_time.tv_usec) / 1000;
-
-    switch (esp_sleep_get_wakeup_cause()) {
-        case ESP_SLEEP_WAKEUP_EXT1: {
-            uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
-            if (wakeup_pin_mask != 0) {
-                int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
-                printf("Wake up from GPIO %d\n", pin);
-            } else {
-                printf("Wake up from GPIO\n");
-            }
-            break;
-        }
-        case ESP_SLEEP_WAKEUP_TIMER: {
-            printf("Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
-            break;
-        }
-        case ESP_SLEEP_WAKEUP_UNDEFINED:
-        default:
-            printf("Not a deep sleep reset\n");
-    }
-
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-    const int wakeup_time_sec = sec;
-    printf("Enabling timer wakeup, %ds\n", wakeup_time_sec);
-    esp_sleep_enable_timer_wakeup(wakeup_time_sec * 1000000);
-
-    const int ext_wakeup_pin_1 = 25;
-    const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
-    const int ext_wakeup_pin_2 = 26;
-    const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
-
-    printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
-    esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-
-    // Isolate GPIO12 pin from external circuits. This is needed for modules
-    // which have an external pull-up resistor on GPIO12 (such as ESP32-WROVER)
-    // to minimize current consumption.
-    rtc_gpio_isolate(GPIO_NUM_12);
-
-    printf("Entering deep sleep\n");
-    gettimeofday(&sleep_enter_time, NULL);
-
-    esp_deep_sleep_start();
-}
 static int s_retry_num = 0;
 
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
@@ -247,6 +250,7 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 	    }else{
 		printf("NO WIFI ... continue\n");
 		//esp_restart();	
+            	xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
 	    } 
             break;
 	}
@@ -256,7 +260,7 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
-static void wifi_init(void)
+extern "C" void wifi_init(void)
 {
     tcpip_adapter_init();
     wifi_event_group = xEventGroupCreate();
@@ -264,12 +268,19 @@ static void wifi_init(void)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+    //wifi_config_t wifi_config = {
+    //    .sta = {
+    //        .ssid = CONFIG_WIFI_SSID,
+    //        .password = CONFIG_WIFI_PASSWORD,
+    //    },
+    //};
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = CONFIG_WIFI_SSID,
-            .password = CONFIG_WIFI_PASSWORD,
+            CONFIG_WIFI_SSID,
+            CONFIG_WIFI_PASSWORD,
         },
     };
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
@@ -314,6 +325,7 @@ extern "C" void app_main(void)
     //xTaskCreate( &DHT_task, "DHT_task", 2048, NULL, 5, NULL );
     //i2c_master_init();
     //xTaskCreate(&task_bme280_normal_mode, "bme280_normal_mode",  2048, NULL, 6, NULL);
+    printf("avvio la lettura dal sensore...\n");
     xTaskCreate(ds18x20_test, "ds18x20_test", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
     vTaskDelay( 3000 / portTICK_RATE_MS );
 
