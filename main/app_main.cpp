@@ -80,7 +80,6 @@ static const int RESCAN_INTERVAL = 8;
 static TheThingsNetwork ttn;
 
 const unsigned TX_INTERVAL = 60;
-
 void sleeppa(int sec)
 {
     struct timeval now;
@@ -98,6 +97,10 @@ void sleeppa(int sec)
             }
             break;
         }
+        case ESP_SLEEP_WAKEUP_EXT0: {
+                printf("Wake up from GPIO EXT0 12\n");
+            break;
+        }
         case ESP_SLEEP_WAKEUP_TIMER: {
             printf("Wake up from timer. Time spent in deep sleep: %dms\n", sleep_time_ms);
             break;
@@ -113,18 +116,24 @@ void sleeppa(int sec)
     printf("Enabling timer wakeup, %ds\n", wakeup_time_sec);
     esp_sleep_enable_timer_wakeup(wakeup_time_sec * 1000000);
 
-    const int ext_wakeup_pin_1 = 25;
-    const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
-    const int ext_wakeup_pin_2 = 26;
-    const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
+//    const int ext_wakeup_pin_1 = 33;
+//    const uint64_t ext_wakeup_pin_1_mask = 1ULL << ext_wakeup_pin_1;
+//    const int ext_wakeup_pin_2 = 12;
+//    const uint64_t ext_wakeup_pin_2_mask = 1ULL << ext_wakeup_pin_2;
+//
+//    printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
+//    esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+//    //esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ALL_LOW);
+    
+    rtc_gpio_pulldown_en(GPIO_NUM_12); 
+    rtc_gpio_pullup_dis(GPIO_NUM_12); 
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_12, 1);
 
-    printf("Enabling EXT1 wakeup on pins GPIO%d, GPIO%d\n", ext_wakeup_pin_1, ext_wakeup_pin_2);
-    esp_sleep_enable_ext1_wakeup(ext_wakeup_pin_1_mask | ext_wakeup_pin_2_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-
+    
     // Isolate GPIO12 pin from external circuits. This is needed for modules
     // which have an external pull-up resistor on GPIO12 (such as ESP32-WROVER)
     // to minimize current consumption.
-    rtc_gpio_isolate(GPIO_NUM_12);
+    //rtc_gpio_isolate(GPIO_NUM_12);
 
     printf("Entering deep sleep\n");
     gettimeofday(&sleep_enter_time, NULL);
@@ -251,7 +260,7 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 	    }else{
 		printf("NO WIFI ... continue\n");
 		//esp_restart();	
-            xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+            //xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 	    } 
             break;
 	}
@@ -291,6 +300,17 @@ extern "C" void wifi_init(void)
     ESP_LOGI(TAG, "Wifi returns");
 }
 
+void messageReceived(const uint8_t* message, size_t length, port_t port)
+{
+    printf("Message of %d bytes received on port %d:", length, port);
+    //if(strncmp(message,"update",6)!=length){
+
+    //} 
+
+    for (int i = 0; i < length; i++)
+        printf(" %02x", message[i]);
+    printf("\n");
+}
 
 extern "C" void app_main(void)
 {
@@ -322,9 +342,33 @@ extern "C" void app_main(void)
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
-    wifi_init();
-    esp_ota_mark_app_valid_cancel_rollback(); 
-    ninux_esp32_ota();
+
+    switch (esp_sleep_get_wakeup_cause()) {
+        case ESP_SLEEP_WAKEUP_EXT1: {
+            uint64_t wakeup_pin_mask = esp_sleep_get_ext1_wakeup_status();
+            if (wakeup_pin_mask != 0) {
+                int pin = __builtin_ffsll(wakeup_pin_mask) - 1;
+                printf("Wake up from GPIO %d\n", pin);
+            	//sprintf((char*)msgData,"pin");
+            } else {
+                printf("Wake up from GPIO\n");
+            }
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_EXT0: {
+            //sprintf((char*)msgData,"pin");
+    	    wifi_init();
+    	    ninux_esp32_ota();
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_TIMER: {
+            sprintf((char*)msgData,"timer");
+            break;
+        }
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+        default:
+            printf("Not a deep sleep reset\n");
+    }
 
 
     vSemaphoreCreateBinary( xSemaphore );
@@ -353,11 +397,14 @@ extern "C" void app_main(void)
     // The below line can be commented after the first run as the data is saved in NVS
     ttn.provision(devEui, appEui, appKey);
 
+    ttn.onMessage(messageReceived);
+
     printf("Joining...\n");
     if (ttn.join())
     {
         printf("Joined.\n");
         xTaskCreate(sendMessages, "send_messages", 1024 * 4, (void* )0, 3, NULL);
+    	esp_ota_mark_app_valid_cancel_rollback(); 
     }
     else
     {
