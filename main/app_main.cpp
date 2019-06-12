@@ -245,7 +245,9 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
     switch (event->event_id) {
         case SYSTEM_EVENT_STA_START:
-            esp_wifi_connect();
+	    esp_err_t cerror;
+            cerror=esp_wifi_connect();
+    	    printf("wifi connect returns:%d\n",(int) cerror);
             break;
         case SYSTEM_EVENT_STA_GOT_IP:
             xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
@@ -253,14 +255,15 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
             break;
         case SYSTEM_EVENT_STA_DISCONNECTED:
         {
-            if (s_retry_num < 3) {
+            if (s_retry_num < 5) {
             	esp_wifi_connect();
             	xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
                 s_retry_num++;
+		printf("riprovo la %d volta\n",s_retry_num);
 	    }else{
 		printf("NO WIFI ... continue\n");
 		//esp_restart();	
-            //xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+            	xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
 	    } 
             break;
 	}
@@ -272,6 +275,18 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 
 extern "C" void wifi_init(void)
 {
+    //esp_err_t err = nvs_flash_init();
+    //if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    //    // 1.OTA app partition table has a smaller NVS partition size than the non-OTA
+    //    // partition table. This size mismatch may cause NVS initialization to fail.
+    //    // 2.NVS partition contains data in new format and cannot be recognized by this version of code.
+    //    // If this happens, we erase NVS partition and initialize NVS again.
+    //    ESP_ERROR_CHECK(nvs_flash_erase());
+    //    err = nvs_flash_init();
+    //}
+    ESP_ERROR_CHECK(nvs_flash_erase());// mio
+    esp_err_t err;
+    err = nvs_flash_init();
     tcpip_adapter_init();
     wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
@@ -284,6 +299,7 @@ extern "C" void wifi_init(void)
     //        .password = CONFIG_WIFI_PASSWORD,
     //    },
     //};
+   
     wifi_config_t wifi_config = {
         .sta = {
             CONFIG_WIFI_SSID,
@@ -294,7 +310,9 @@ extern "C" void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
-    ESP_ERROR_CHECK(esp_wifi_start());
+    err=esp_wifi_start();
+    printf("wifi start returns:%d\n",(int) err);
+    //ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Waiting for wifi");
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
     ESP_LOGI(TAG, "Wifi returns");
@@ -318,20 +336,18 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
 
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
+    //esp_log_level_set("*", ESP_LOG_INFO);
+    //esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
+    //esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
+    //esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
+    //esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
+    //esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
 
     esp_err_t err2;
     // Initialize the GPIO ISR handler service
     err2 = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
     ESP_ERROR_CHECK(err2);
-
-
 
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
