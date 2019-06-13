@@ -275,30 +275,16 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 
 extern "C" void wifi_init(void)
 {
-    //esp_err_t err = nvs_flash_init();
-    //if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    //    // 1.OTA app partition table has a smaller NVS partition size than the non-OTA
-    //    // partition table. This size mismatch may cause NVS initialization to fail.
-    //    // 2.NVS partition contains data in new format and cannot be recognized by this version of code.
-    //    // If this happens, we erase NVS partition and initialize NVS again.
-    //    ESP_ERROR_CHECK(nvs_flash_erase());
-    //    err = nvs_flash_init();
-    //}
-    ESP_ERROR_CHECK(nvs_flash_erase());// mio
+    ESP_ERROR_CHECK(nvs_flash_erase());// force RF full calibration after deep sleep for wifi initialization
     esp_err_t err;
     err = nvs_flash_init();
+    //////
     tcpip_adapter_init();
     wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-    //wifi_config_t wifi_config = {
-    //    .sta = {
-    //        .ssid = CONFIG_WIFI_SSID,
-    //        .password = CONFIG_WIFI_PASSWORD,
-    //    },
-    //};
    
     wifi_config_t wifi_config = {
         .sta = {
@@ -310,9 +296,7 @@ extern "C" void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
     ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
-    err=esp_wifi_start();
-    printf("wifi start returns:%d\n",(int) err);
-    //ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK(esp_wifi_start());
     ESP_LOGI(TAG, "Waiting for wifi");
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
     ESP_LOGI(TAG, "Wifi returns");
@@ -335,13 +319,6 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "[APP] Startup..");
     ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
-
-    //esp_log_level_set("*", ESP_LOG_INFO);
-    //esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
-    //esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
-    //esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
-    //esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    //esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
 
     esp_err_t err2;
